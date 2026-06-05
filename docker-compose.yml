@@ -1,0 +1,43 @@
+# Local backing services for FlowForge.
+# Run: docker compose up -d
+
+services:
+  postgres:
+    image: postgres:15 # pinned major: reproducible across machines
+
+    environment:
+      POSTGRES_USER: flowforge
+      POSTGRES_PASSWORD: flowforge
+      POSTGRES_DB: flowforge
+
+    ports:
+      - "5432:5432" # expose to host so the app (run locally) connects
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data # named volume: data survives restarts
+
+    healthcheck:
+      # let dependents wait until PG actually accepts connections
+      test: ["CMD-SHELL", "pg_isready -U flowforge -d flowforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7 # pinned major
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redisdata:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

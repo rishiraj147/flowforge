@@ -1,0 +1,40 @@
+[tool.poetry]
+name = "flowforge"
+version = "0.1.0"
+description = "FlowForge - a FastAPI service."
+authors = ["Rishi Kumar <rishiraj969r@gmail.com>"]
+readme = "README.md"
+
+# Tell Poetry where the importable package lives. This is what makes the
+# src/ layout work: the package is at src/flowforge, imported as 'flowforge'.
+packages = [{ include = "flowforge", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+fastapi = "^0.115.0"
+uvicorn = { extras = ["standard"], version = "^0.32.0" }
+pydantic-settings = "^2.5.0"
+
+# Async clients for the services in docker-compose:
+asyncpg = "^0.30.0" # PostgreSQL driver (async)
+redis = "^5.1.0"    # redis-py includes async support (redis.asyncio)
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+httpx = "^0.27.0"   # FastAPI TestClient + async client
+ruff = "^0.7.0"     # linter + formatter
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
