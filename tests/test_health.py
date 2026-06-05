@@ -15,4 +15,5 @@ def test_health_ok():
     assert response.status_code == 200
     body= response.json()
     assert body["status"] == "ok"
+    assert body["app"] == "FlowForge-Test"
     assert body["environment"] == "test"

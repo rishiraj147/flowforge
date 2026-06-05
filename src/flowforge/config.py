@@ -1,6 +1,7 @@
 """Application configuration via Pydantic Settings (12-factor: config from env)."""
 
 from functools import lru_cache
+from fastapi import Request
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,6 +31,13 @@ class Settings(BaseSettings):
         default="redis://localhost:6379/0"
     )
 
+    # --- connection pool tuning (see WHY: pooling) --- 
+    db_echo: bool =False            # log every SQL statement (turn on to learn)
+    db_pool_size: int = 5           # persistent connections to kept open per process
+    db_max_overflow: int = 10       # extra short-lived connections under burst
+
+    
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -41,3 +49,19 @@ def get_settings() -> Settings:
     (Depends(get_settings)).
     """
     return Settings()
+
+def settings_from_request(request:Request) -> Settings:
+    """FastAPI dependency: return the Settings instance attached to THIS app.
+
+    Why this exists (vs. just using get_settings):
+    - create_app(settings) stores the caller's Settings on app.state.settings.
+    - Tests build apps with custom Settings, e.g.
+      create_app(Settings(environment="test")).
+    - get_settings() ignores all that and returns a globally cached no-arg
+      Settings, so handlers using Depends(get_settings) would never see the
+      test's overrides.
+    - This dependency reads from app.state, so whatever was passed to
+      create_app is exactly what the handler sees. Per-app, not global.
+    """
+
+    return request.app.state.settings
