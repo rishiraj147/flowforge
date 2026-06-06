@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, Depends
 
+
 from flowforge.config import Settings, settings_from_request
+from flowforge.db import get_session
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["health"])
 
@@ -25,16 +29,16 @@ async def health(
         "environment": settings.environment,
     }
 
-# @router.get("/health/db")
-# async def health_db(
-#     session: AsyncSession = Depends(get_session),
-# ) -> dict[str, str]:
-#     """Readiness: can we actually reach Postgres?
+@router.get("/health/db")
+async def health_db(
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Readiness: can we actually reach Postgres?
 
-#     `Depends(get_session)` borrows a connection from the pool, runs a trivial
-#     query, then the dependency returns the connection to the pool. This is the
-#     smallest possible example of using a Session in a route.
-#     """
+    `Depends(get_session)` borrows a connection from the pool, runs a trivial
+    query, then the dependency returns the connection to the pool. This is the
+    smallest possible example of using a Session in a route.
+    """
 
-#     await session.execute(text("SELECT 1"))
-#     return {"database": "ok"}
+    await session.execute(text("SELECT 1"))
+    return {"database": "ok"}

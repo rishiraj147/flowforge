@@ -19,6 +19,10 @@ pydantic-settings = "^2.5.0"
 # Async clients for the services in docker-compose:
 asyncpg = "^0.30.0" # PostgreSQL driver (async)
 redis = "^5.1.0"    # redis-py includes async support (redis.asyncio)
+# ----- ORM  + migrations (added for the DB layer) -----
+sqlalchemy={extras = ["asyncio"], version= "^2.0.35" } # pulls in greenlet
+alembic = "^1.13.0"
+greenlet = "^3.5.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"

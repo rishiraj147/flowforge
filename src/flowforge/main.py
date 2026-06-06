@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from flowforge.api.health import router as health_router
 from flowforge.config import Settings, get_settings
+from flowforge.db import create_engine, create_sessionmaker
 
 
 @asynccontextmanager
@@ -19,11 +20,17 @@ async def lifespan(app: FastAPI):
     # them on app.state. Shutdown: close them after `yield`.
 
     settings: Settings = app.state.settings
+    engine= create_engine(settings)
+    app.state.engine = engine
+    app.state.sessionmaker = create_sessionmaker(engine)
 
     # e.g.
     # app.state.redis = redis.asyncio.from_url(settings.redis_url)
 
-    yield
+    yield # app servers request here, reusing the shared pool/factory
+
+    # shutdown: dispose the engine so all pooled connections close cleanly.
+    await engine.dispose()
 
     # e.g.
     # await app.state.redis.aclose()
