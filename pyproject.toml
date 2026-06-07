@@ -24,6 +24,12 @@ sqlalchemy={extras = ["asyncio"], version= "^2.0.35" } # pulls in greenlet
 alembic = "^1.13.0"
 greenlet = "^3.5.1"
 
+# --- auth ---
+bcrypt = "^4.2.0"               # password hashing
+pyjwy = "^2.9.0"                # JWT encode/decode/verify
+email-validator = "^2.2.0"      # required for pydantic EmailStr
+
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"
 pytest-asyncio = "^0.24.0"

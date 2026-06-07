@@ -36,6 +36,10 @@ class User(Base):
         default=None,
     )
 
+    #BCrypt hash (NEVER the plain password). 60-char fixed output, but 255 leaves room
+    # for future migtation (eg. switching to argon2 which prouces longer hashes).
+    passweord_hash: Mapped[str]=mapped_column(String(255))
+
     # server_default=func.now() => PostgreSQL fills the timestamp, not Python.
     # That keeps the clock consistent regardless of which app server inserts.
     created_at: Mapped[datetime] = mapped_column(

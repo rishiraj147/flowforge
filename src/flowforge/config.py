@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     db_pool_size: int = 5           # persistent connections to kept open per process
     db_max_overflow: int = 10       # extra short-lived connections under burst
 
+    # --- auth / JWT ---
+    # secret used to sign JWTs. In production, this MUST be set to a long random string.
+    # If you change this, all existing JWTs will be invalidated (users will have to log in again).
+    jwt_secret_key: str= "change-me-in-production-to-a-long-random-string"
+    jwt_algorithm: str = "HS256"  # HMAC + SHA-256, symmetric algorithm used to sign JWTs
+    access_token_ttl_minutes: int = 15 # short - limits damage if stolen
+    refresh_token_ttl_days: int = 7 # long - allows users to stay logged in for a week
+
+
     
 
 
