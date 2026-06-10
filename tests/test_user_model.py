@@ -27,6 +27,7 @@ async def test_user_round_trip():
             new_user = User(
                 email=unique_email,
                 full_name="Alice",
+                password_hash="test_hash",
             )
 
             session.add(new_user)

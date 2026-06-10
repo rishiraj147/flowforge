@@ -35,10 +35,20 @@ class User(Base):
         String(255),
         default=None,
     )
+    # Role for RBAC. String + server-side default so the migration that adds this
+    # column can safely backfill existing rows with "viewer" (fail-closed default).
+    # The enum-based validation lives in src/flowforge/authz.py, NOT here — keeping
+    # the model dumb means SQLAlchemy never has to know about the Role enum.
+    role: Mapped[str] = mapped_column(
+        String(20),
+        default="viewer",          # used when constructing a User() in Python
+        server_default="viewer",   # used by Postgres for existing rows during ALTER
+        nullable=False,
+    )
 
     #BCrypt hash (NEVER the plain password). 60-char fixed output, but 255 leaves room
     # for future migtation (eg. switching to argon2 which prouces longer hashes).
-    passweord_hash: Mapped[str]=mapped_column(String(255))
+    password_hash: Mapped[str]=mapped_column(String(255))
 
     # server_default=func.now() => PostgreSQL fills the timestamp, not Python.
     # That keeps the clock consistent regardless of which app server inserts.

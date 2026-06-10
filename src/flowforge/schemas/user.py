@@ -9,6 +9,7 @@ bugs. Keeping them apart is the standard production split.
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -18,6 +19,9 @@ class UserCreate(BaseModel):
 
     EmailStr validates the format (a@b.c). Field(min_length=8) is a baseline
     password rule — real apps add complexity rules, breach-database checks, etc.
+
+    Note: NO `role` field here. New users always get the default (viewer) —
+    you can't self-promote via the registration form.
     """
 
     email: EmailStr
@@ -27,6 +31,9 @@ class UserCreate(BaseModel):
 
 class UserRead(BaseModel):
     """Response body. NOTE the fields we EXCLUDE: password, password_hash.
+
+    `role` IS exposed — the client (UI) needs it to show/hide admin buttons,
+    etc. Exposing role is safe; it's not a secret.
 
     from_attributes=True lets Pydantic build this from a SQLAlchemy ORM instance
     by reading attributes (user.id, user.email, ...). Without it, FastAPI would
@@ -38,4 +45,17 @@ class UserRead(BaseModel):
     id: uuid.UUID
     email: EmailStr
     full_name: str | None
+    role: str
     created_at: datetime
+
+
+class RoleUpdate(BaseModel):
+    """Body for PATCH /users/{user_id}/role — admin-only role change.
+
+    Literal[...] restricts the value to exactly these three strings at the
+    HTTP boundary. Pydantic returns a 422 for anything else BEFORE our code
+    runs. Defense in depth: even if a buggy frontend sent role="superadmin",
+    the request is rejected at parse time.
+    """
+
+    role: Literal["admin", "developer", "viewer"]

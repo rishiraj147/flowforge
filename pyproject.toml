@@ -26,7 +26,7 @@ greenlet = "^3.5.1"
 
 # --- auth ---
 bcrypt = "^4.2.0"               # password hashing
-pyjwy = "^2.9.0"                # JWT encode/decode/verify
+pyjwt = "^2.9.0"                # JWT encode/decode/verify
 email-validator = "^2.2.0"      # required for pydantic EmailStr
 
 

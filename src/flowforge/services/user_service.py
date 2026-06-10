@@ -56,6 +56,34 @@ async def get_user_by_id(
     return await session.get(User, user_id)
 
 
+async def list_all_users(session: AsyncSession) -> list[User]:
+    """Used by the admin endpoint. In a real app this would be paginated."""
+    result = await session.execute(select(User))
+    return list(result.scalars().all())
+
+
+async def set_role(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    new_role: str,
+) -> User | None:
+    """Admin action: change a user's role.
+
+    Returns the updated User, or None if no such user. The router maps None -> 404.
+    Service is HTTP-agnostic: it does not know about status codes.
+    """
+
+    user = await session.get(User, user_id)
+    if user is None:
+        return None
+
+    user.role = new_role
+    await session.commit()
+    await session.refresh(user)
+
+    return user
+
+
 async def authenticate(
     *,
     session: AsyncSession,
