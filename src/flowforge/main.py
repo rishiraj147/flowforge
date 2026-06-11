@@ -13,6 +13,7 @@ from flowforge.api.health import router as health_router
 from flowforge.config import Settings, get_settings
 from flowforge.db import create_engine, create_sessionmaker
 from flowforge.api.auth import router as auth_router
+from flowforge.api.workflows import  router as workflows_router
 from flowforge.api.users import router as users_router
 
 
@@ -58,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(users_router)
+    app.include_router(workflows_router)
 
     return app
 
