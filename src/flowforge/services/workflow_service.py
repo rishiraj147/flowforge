@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from flowforge.dag import validate_dag
 from flowforge.models import Workflow
 
 DEFAULT_PAGE_SIZE = 20
@@ -59,6 +60,10 @@ async def create(
     description: str | None,
     definition: dict[str, Any],
 ) -> Workflow:
+    # Validate BEFORE we touch the DB. If the DAG is bad, we never write a row.
+    # Raises DAGValidationError -> router translates to 422.
+    validate_dag(definition)
+
     wf = Workflow(
         owner_id=owner_id,
         name=name,
@@ -94,6 +99,11 @@ async def update(
     wf = await session.get(Workflow, workflow_id)
     if wf is None:
         return None
+
+    # If the caller is changing the definition, re-validate the new DAG
+    # BEFORE persisting. Otherwise an edit could turn a valid workflow into an cycle one.
+    if "definition" in patch:
+        validate_dag(patch["definition"])
 
     for field, value in patch.items():
         setattr(wf, field, value)

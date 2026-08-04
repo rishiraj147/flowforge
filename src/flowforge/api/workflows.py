@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from flowforge.authz import Permission, require_permission
+from flowforge.dag import DagValidationError
 from flowforge.db import get_session
 from flowforge.models import User
 from flowforge.schemas.workflow import (
@@ -32,6 +33,22 @@ from flowforge.schemas.workflow import (
 from flowforge.services import workflow_service
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
+
+def _dag_error_to_http(exc: DagValidationError) -> HTTPException:
+    """Translate a domain validation error into a structured 422 response.
+    
+    We use 422 (Unprocessable Entity) - same family as Pydantic validation
+    erroes. The body carried enough details for the client UI to highlight
+    the broken steps.
+    """
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={
+            "message": exc.message,
+            "cycle_nodes": exc.cycle_nodes,
+            "bad_step":exc.bad_step
+        }
+    )
 
 
 @router.post(
@@ -51,17 +68,18 @@ async def create_workflow(
     201 Created + the new resource is the REST convention for
     POST-to-collection.
     """
-
-    wf = await workflow_service.create(
-        session,
-        owner_id=current_user.id,
-        name=body.name,
-        description=body.description,
-        definition=body.definition,
-    )
+    try:
+        wf = await workflow_service.create(
+            session,
+            owner_id=current_user.id,
+            name=body.name,
+            description=body.description,
+            definition=body.definition,
+        )
+    except DagValidationError as exc:
+        raise _dag_error_to_http(exc)
 
     return wf  # type: ignore[return-value]
-
 
 @router.get("", response_model=WorkflowPage)
 async def list_workflows(
@@ -133,12 +151,14 @@ async def update_workflow(
     """
 
     patch = body.model_dump(exclude_unset=True)
-
-    wf = await workflow_service.update(
-        session,
-        workflow_id,
-        patch,
-    )
+    try:
+        wf = await workflow_service.update(
+            session,
+            workflow_id,
+            patch,
+        )
+    except DagValidationError as exc:
+        raise _dag_error_to_http(exc)
 
     if wf is None:
         raise HTTPException(
