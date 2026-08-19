@@ -125,6 +125,8 @@ def test_create_get_update_delete_happy_path():
         assert created["name"] == "First workflow"
         assert created["status"] == "draft"
         assert created["owner_id"]
+        assert created["version_number"] == 1
+        assert created["current_version_id"]
 
         # GET
         r = client.get(
@@ -379,3 +381,182 @@ def test_garbage_cursor_is_ignored():
         )
 
         assert r.status_code == 200
+
+
+# ---------------- versioning ----------------
+
+
+def test_patch_definition_creates_new_version_and_preserves_old():
+    """Updating definition publishes v2; v1 snapshot stays immutable."""
+
+    app = create_app(Settings(environment="test"))
+
+    with TestClient(app) as client:
+        token = _dev_token(client)
+
+        r = client.post(
+            "/workflows",
+            headers=_auth(token),
+            json={
+                "name": "versioned",
+                "definition": {"v": 1},
+            },
+        )
+
+        assert r.status_code == 201, r.text
+
+        wf_id = r.json()["id"]
+        v1_id = r.json()["current_version_id"]
+
+        assert r.json()["version_number"] == 1
+        assert r.json()["definition"] == {"v": 1}
+
+        r = client.patch(
+            f"/workflows/{wf_id}",
+            headers=_auth(token),
+            json={"definition": {"v": 2}},
+        )
+
+        assert r.status_code == 200
+
+        body = r.json()
+
+        assert body["version_number"] == 2
+        assert body["definition"] == {"v": 2}
+        assert body["current_version_id"] != v1_id
+
+        r = client.get(
+            f"/workflows/{wf_id}/versions/1",
+            headers=_auth(token),
+        )
+
+        assert r.status_code == 200
+        assert r.json()["definition"] == {"v": 1}
+        assert r.json()["version_number"] == 1
+
+
+def test_patch_identical_definition_does_not_bump_version():
+    app = create_app(Settings(environment="test"))
+
+    with TestClient(app) as client:
+        token = _dev_token(client)
+
+        r = client.post(
+            "/workflows",
+            headers=_auth(token),
+            json={
+                "name": "no-bump",
+                "definition": {"same": True},
+            },
+        )
+
+        wf_id = r.json()["id"]
+        version_id = r.json()["current_version_id"]
+        version_number = r.json()["version_number"]
+
+        r = client.patch(
+            f"/workflows/{wf_id}",
+            headers=_auth(token),
+            json={"definition": {"same": True}},
+        )
+
+        assert r.status_code == 200
+
+        body = r.json()
+
+        assert body["version_number"] == version_number
+        assert body["current_version_id"] == version_id
+
+
+def test_patch_name_only_does_not_create_new_version():
+    app = create_app(Settings(environment="test"))
+
+    with TestClient(app) as client:
+        token = _dev_token(client)
+
+        r = client.post(
+            "/workflows",
+            headers=_auth(token),
+            json={
+                "name": "before",
+                "definition": {"steps": []},
+            },
+        )
+
+        wf_id = r.json()["id"]
+        version_id = r.json()["current_version_id"]
+
+        r = client.patch(
+            f"/workflows/{wf_id}",
+            headers=_auth(token),
+            json={"name": "after"},
+        )
+
+        body = r.json()
+
+        assert body["name"] == "after"
+        assert body["current_version_id"] == version_id
+        assert body["version_number"] == 1
+
+
+def test_list_versions_returns_history_newest_first():
+    app = create_app(Settings(environment="test"))
+
+    with TestClient(app) as client:
+        token = _dev_token(client)
+
+        r = client.post(
+            "/workflows",
+            headers=_auth(token),
+            json={"name": "history", "definition": {"n": 1}},
+        )
+
+        wf_id = r.json()["id"]
+
+        client.patch(
+            f"/workflows/{wf_id}",
+            headers=_auth(token),
+            json={"definition": {"n": 2}},
+        )
+
+        client.patch(
+            f"/workflows/{wf_id}",
+            headers=_auth(token),
+            json={"definition": {"n": 3}},
+        )
+
+        r = client.get(
+            f"/workflows/{wf_id}/versions",
+            headers=_auth(token),
+        )
+
+        assert r.status_code == 200
+
+        versions = r.json()
+
+        assert len(versions) == 3
+        assert versions[0]["version_number"] == 3
+        assert versions[1]["version_number"] == 2
+        assert versions[2]["version_number"] == 1
+
+
+def test_get_unknown_version_returns_404():
+    app = create_app(Settings(environment="test"))
+
+    with TestClient(app) as client:
+        token = _dev_token(client)
+
+        r = client.post(
+            "/workflows",
+            headers=_auth(token),
+            json={"name": "x"},
+        )
+
+        wf_id = r.json()["id"]
+
+        r = client.get(
+            f"/workflows/{wf_id}/versions/99",
+            headers=_auth(token),
+        )
+
+        assert r.status_code == 404

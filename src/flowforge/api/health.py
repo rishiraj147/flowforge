@@ -1,5 +1,7 @@
 """Health-check endpoints."""
 
+import redis.asyncio as aioredis
+
 from fastapi import APIRouter, Depends
 
 
@@ -42,3 +44,25 @@ async def health_db(
 
     await session.execute(text("SELECT 1"))
     return {"database": "ok"}
+
+
+@router.get("/health/redis")
+async def health_redis(
+    settings: Settings = Depends(settings_from_request),
+) -> dict[str, str]:
+    """Readiness: can we reach Redis (Celery broker + result backend)?"""
+
+    client = aioredis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+    )
+
+    try:
+        pong = await client.ping()
+    finally:
+        await client.aclose()
+
+    if not pong:
+        raise RuntimeError("Redis ping failed")
+
+    return {"redis": "ok"}

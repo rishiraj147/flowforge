@@ -1,11 +1,12 @@
 """Pydantic schemas for the Workflow feature.
 
-We define FOUR schemas:
+We define schemas for:
 
 - WorkflowCreate  — what the client SENDS on POST. No id/owner/timestamps (server-set).
 - WorkflowUpdate  — what the client SENDS on PATCH. ALL fields optional.
-- WorkflowRead    — what the server RETURNS. Includes server-set fields.
+- WorkflowRead    — what the server RETURNS. Includes server-set fields + current version.
 - WorkflowPage    — the paginated list response: items + next_cursor.
+- WorkflowVersionRead — immutable version snapshot returned by version endpoints.
 
 Why so many? Each direction has DIFFERENT field sets and DIFFERENT validation
 rules. Sharing one schema would either expose internal fields to clients or
@@ -40,6 +41,8 @@ class WorkflowUpdate(BaseModel):
     The handler uses `body.model_dump(exclude_unset=True)` to get only the
     fields the client explicitly sent — fields the client omitted are NOT
     treated as "set to null." That's the PATCH contract.
+
+    Changing `definition` creates a new immutable version (v(N+1)).
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -50,19 +53,31 @@ class WorkflowUpdate(BaseModel):
 
 # ---------- outputs ----------
 
-class WorkflowRead(BaseModel):
-    """Single workflow response.
+class WorkflowVersionRead(BaseModel):
+    """Single immutable version snapshot."""
 
-    from_attributes=True lets Pydantic build this directly from an ORM Workflow
-    instance by reading attributes — no manual dict conversion.
-    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    version_number: int
+    definition: dict[str, Any]
+    created_by: uuid.UUID | None
+    created_at: datetime
+
+
+class WorkflowRead(BaseModel):
+    """Single workflow response — metadata + current version fields."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     name: str
     description: str | None
+    # Flattened from current_version for backward-compatible API shape.
     definition: dict[str, Any]
+    version_number: int
+    current_version_id: uuid.UUID
     status: str
     owner_id: uuid.UUID
     created_at: datetime

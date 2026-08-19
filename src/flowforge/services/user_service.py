@@ -23,6 +23,7 @@ async def create_user(
     email: str,
     password: str,
     full_name: str | None,
+    role: str | None = None,
 ) -> User:
     """Hash the password and INSERT a new user."""
 
@@ -31,6 +32,9 @@ async def create_user(
         full_name=full_name,
         password_hash=hash_password(password),
     )
+
+    if role is not None:
+        user.role = role
 
     session.add(user)
     await session.commit()

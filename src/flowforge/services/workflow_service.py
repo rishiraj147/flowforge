@@ -3,6 +3,13 @@
 Pure functions over an AsyncSession. No FastAPI, no HTTP, no Pydantic models.
 This file would work unchanged if FlowForge were a CLI or a background worker.
 
+Versioning rules:
+- `definition` lives on immutable WorkflowVersion rows.
+- CREATE inserts workflow + v1, then sets current_version_id.
+- PATCH that changes definition inserts v(N+1) and moves the pointer.
+- Identical definition payloads skip a new version (no-op content update).
+- Metadata fields (name, description, status) update the workflows row directly.
+
 The CURSOR pagination scheme:
     cursor = base64(json({"c": "<iso_created_at>", "i": "<uuid>"}))
 
@@ -18,12 +25,25 @@ from typing import Any
 
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from flowforge.dag import validate_dag
-from flowforge.models import Workflow
+from flowforge.models import Workflow, WorkflowVersion
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+
+# Column attrs to refresh after commit. We intentionally skip relationships —
+# `current_version` is kept in memory (avoids stale FK + MissingGreenlet on lazy load).
+_WORKFLOW_COLUMN_ATTRS = [
+    "name",
+    "description",
+    "current_version_id",
+    "status",
+    "owner_id",
+    "created_at",
+    "updated_at",
+]
 
 
 # ---------- cursor codec ----------
@@ -50,6 +70,11 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
     )
 
 
+def _workflow_load_options() -> tuple[Any, ...]:
+    """Eager-load current_version so WorkflowRead properties resolve."""
+    return (selectinload(Workflow.current_version),)
+
+
 # ---------- CRUD ----------
 
 async def create(
@@ -60,56 +85,110 @@ async def create(
     description: str | None,
     definition: dict[str, Any],
 ) -> Workflow:
-    # Validate BEFORE we touch the DB. If the DAG is bad, we never write a row.
-    # Raises DAGValidationError -> router translates to 422.
     validate_dag(definition)
 
     wf = Workflow(
         owner_id=owner_id,
         name=name,
         description=description,
+    )
+    session.add(wf)
+    await session.flush()
+
+    version = WorkflowVersion(
+        workflow_id=wf.id,
+        version_number=1,
         definition=definition,
+        created_by=owner_id,
+    )
+    session.add(version)
+    await session.flush()
+
+    wf.current_version_id = version.id
+    wf.current_version = version
+
+    await session.commit()
+
+    result = await session.execute(
+        select(Workflow)
+        .where(Workflow.id == wf.id)
+        .options(*_workflow_load_options())
     )
 
-    session.add(wf)
-    await session.commit()
-    await session.refresh(wf)  # reload server-side defaults (id, created_at, status)
-
-    return wf
+    return result.scalar_one()
 
 
 async def get(
     session: AsyncSession,
     workflow_id: uuid.UUID,
 ) -> Workflow | None:
-    return await session.get(Workflow, workflow_id)
+    result = await session.execute(
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .options(*_workflow_load_options())
+    )
+
+    return result.scalar_one_or_none()
 
 
 async def update(
     session: AsyncSession,
     workflow_id: uuid.UUID,
     patch: dict[str, Any],
+    *,
+    updated_by_id: uuid.UUID,
 ) -> Workflow | None:
     """Apply a partial update. `patch` should already be {only fields the client sent}.
 
-    If patch is empty (client sent {} body), this is a no-op except for the
-    `updated_at` bump — fine, idempotent.
+    Definition changes create a new immutable version; other fields update metadata.
     """
 
-    wf = await session.get(Workflow, workflow_id)
+    result = await session.execute(
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .options(*_workflow_load_options())
+    )
+    wf = result.scalar_one_or_none()
+
     if wf is None:
         return None
 
-    # If the caller is changing the definition, re-validate the new DAG
-    # BEFORE persisting. Otherwise an edit could turn a valid workflow into an cycle one.
-    if "definition" in patch:
-        validate_dag(patch["definition"])
+    new_definition = patch.pop("definition", None)
+    bumped_version: WorkflowVersion | None = None
+
+    if new_definition is not None:
+        validate_dag(new_definition)
+
+        current = wf.current_version
+        current_definition = current.definition if current is not None else {}
+
+        if new_definition != current_definition:
+            next_number = (current.version_number if current is not None else 0) + 1
+
+            version = WorkflowVersion(
+                workflow_id=wf.id,
+                version_number=next_number,
+                definition=new_definition,
+                created_by=updated_by_id,
+            )
+            session.add(version)
+            await session.flush()
+
+            bumped_version = version
+            wf.current_version_id = version.id
+            wf.current_version = version
 
     for field, value in patch.items():
         setattr(wf, field, value)
 
     await session.commit()
-    await session.refresh(wf)
+    # Server-side onupdate=func.now() expires updated_at on flush; async refresh
+    # reloads columns without lazy-load (MissingGreenlet in FastAPI response path).
+    await session.refresh(wf, attribute_names=_WORKFLOW_COLUMN_ATTRS)
+
+    if bumped_version is not None:
+        # expire_on_commit=False keeps stale relationship objects in memory — re-wire.
+        wf.current_version = bumped_version
 
     return wf
 
@@ -127,6 +206,45 @@ async def delete_one(
     await session.commit()
 
     return result.rowcount > 0
+
+
+# ---------- version history ----------
+
+async def list_versions(
+    session: AsyncSession,
+    workflow_id: uuid.UUID,
+) -> list[WorkflowVersion] | None:
+    """Return all versions for a workflow, newest first. None if workflow missing."""
+
+    wf = await session.get(Workflow, workflow_id)
+
+    if wf is None:
+        return None
+
+    result = await session.execute(
+        select(WorkflowVersion)
+        .where(WorkflowVersion.workflow_id == workflow_id)
+        .order_by(WorkflowVersion.version_number.desc())
+    )
+
+    return list(result.scalars().all())
+
+
+async def get_version(
+    session: AsyncSession,
+    workflow_id: uuid.UUID,
+    version_number: int,
+) -> WorkflowVersion | None:
+    """Fetch one immutable snapshot by workflow id + version number."""
+
+    result = await session.execute(
+        select(WorkflowVersion).where(
+            WorkflowVersion.workflow_id == workflow_id,
+            WorkflowVersion.version_number == version_number,
+        )
+    )
+
+    return result.scalar_one_or_none()
 
 
 # ---------- listing with cursor pagination ----------
@@ -149,9 +267,13 @@ async def list_page(
 
     limit = max(1, min(limit, MAX_PAGE_SIZE))
 
-    stmt = select(Workflow).order_by(
-        Workflow.created_at.desc(),
-        Workflow.id.desc(),
+    stmt = (
+        select(Workflow)
+        .options(*_workflow_load_options())
+        .order_by(
+            Workflow.created_at.desc(),
+            Workflow.id.desc(),
+        )
     )
 
     if cursor is not None:
@@ -159,14 +281,9 @@ async def list_page(
             ts, row_id = _decode_cursor(cursor)
 
         except (ValueError, KeyError, json.JSONDecodeError):
-            # Malformed cursor — treat as "start from beginning". Alternative:
-            # raise 400. Either is defensible; "ignore garbage" is friendlier.
             ts, row_id = None, None
 
         if ts is not None:
-            # (created_at, id) < (ts, row_id)
-            # expressed across OR because SQLAlchemy doesn't compile tuple
-            # comparisons across all dialects.
             stmt = stmt.where(
                 or_(
                     Workflow.created_at < ts,

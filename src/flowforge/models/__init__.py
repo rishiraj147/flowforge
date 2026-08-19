@@ -1,12 +1,29 @@
-"""Import every model here so they register on Base.metadata.
+"""Import every model here so they register on Base.metadata."""
 
-Alembic's autogenerate compares Base.metadata against the live DB. A model that
-is never imported is invisible to Base.metadata, so its table would be silently
-missing from migrations. Importing here guarantees registration.
-"""
-
+from flowforge.models.artifact import Artifact
+from flowforge.models.dead_letter_task import DeadLetterTask
 from flowforge.models.base import Base
+from flowforge.models.execution import Execution
+from flowforge.models.schedule import Schedule
+from flowforge.models.schedule_fire import ScheduleFire
+from flowforge.models.task_run import TaskRun
 from flowforge.models.user import User
+from flowforge.models.webhook import Webhook
+from flowforge.models.webhook_delivery import WebhookDelivery
 from flowforge.models.workflow import Workflow
+from flowforge.models.workflow_version import WorkflowVersion
 
-__all__ = ["Base", "User", "Workflow"]
+__all__ = [
+    "Base",
+    "Artifact",
+    "DeadLetterTask",
+    "Execution",
+    "Schedule",
+    "ScheduleFire",
+    "TaskRun",
+    "User",
+    "Webhook",
+    "WebhookDelivery",
+    "Workflow",
+    "WorkflowVersion",
+]

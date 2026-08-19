@@ -38,6 +38,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def register(
     body: UserCreate,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(settings_from_request),
 ) -> UserRead:
     """Create a new user. Returns the public view (no password hash)."""
 
@@ -53,11 +54,14 @@ async def register(
             "Email already registered",
         )
 
+    register_role = "developer" if settings.load_test_auto_developer_role else None
+
     user = await user_service.create_user(
         session,
         email=body.email,
         password=body.password,
         full_name=body.full_name,
+        role=register_role,
     )
 
     # response_model=UserRead + from_attributes=True turns the ORM User into the

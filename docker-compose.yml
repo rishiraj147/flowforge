@@ -38,6 +38,59 @@ services:
       timeout: 3s
       retries: 5
 
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+
+    command: server /data --console-address ":9001"
+
+    environment:
+      MINIO_ROOT_USER: flowforge
+      MINIO_ROOT_PASSWORD: flowforge
+
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console
+
+    volumes:
+      - miniodata:/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      GF_SECURITY_ADMIN_USER: flowforge
+      GF_SECURITY_ADMIN_PASSWORD: flowforge
+      GF_USERS_ALLOW_SIGN_UP: "false"
+
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   redisdata:
+  miniodata:

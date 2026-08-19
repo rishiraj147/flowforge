@@ -88,6 +88,24 @@ def test_new_user_defaults_to_viewer():
         assert r.json()["role"] == "viewer"
 
 
+def test_load_test_auto_developer_role_flag():
+    """Local load-test flag only — not available to clients via the register body."""
+
+    app = create_app(
+        Settings(environment="test", load_test_auto_developer_role=True),
+    )
+    email = _new_email()
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/auth/register",
+            json={"email": email, "password": "supersecret123"},
+        )
+
+        assert r.status_code == 201
+        assert r.json()["role"] == "developer"
+
+
 def test_register_payload_cannot_set_role():
     """Even if the client sends `role: admin`, it must be ignored by UserCreate."""
 

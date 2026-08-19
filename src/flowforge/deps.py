@@ -18,6 +18,34 @@ from flowforge.security import ACCESS, decode_token
 from flowforge.services import user_service
 
 
+async def resolve_user_from_token(
+    session: AsyncSession,
+    settings: Settings,
+    token: str,
+) -> User | None:
+    """Load user from JWT access token (for WebSocket query-param auth)."""
+
+    try:
+        payload = decode_token(token, settings)
+    except jwt.PyJWTError:
+        return None
+
+    if payload.get("type") != ACCESS:
+        return None
+
+    sub = payload.get("sub")
+
+    if sub is None:
+        return None
+
+    try:
+        user_id = uuid.UUID(sub)
+    except (ValueError, TypeError):
+        return None
+
+    return await user_service.get_user_by_id(session, user_id)
+
+
 # OAuth2PasswordBearer extracts the token from the "Authorization: Bearer <token>"
 # header. tokenUrl is METADATA for the OpenAPI docs (Swagger's "Authorize" button
 # points there) — it does not affect runtime behavior.

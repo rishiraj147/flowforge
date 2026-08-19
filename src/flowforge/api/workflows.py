@@ -2,11 +2,13 @@
 
 Mapping (method, path) -> permission -> service call:
 
-POST    /workflows           workflows:write   create
-GET     /workflows           workflows:read    list_page
-GET     /workflows/{id}      workflows:read    get
-PATCH   /workflows/{id}      workflows:write   update
-DELETE  /workflows/{id}      workflows:delete  delete_one
+POST    /workflows                           workflows:write   create
+GET     /workflows                           workflows:read    list_page
+GET     /workflows/{id}                      workflows:read    get
+PATCH   /workflows/{id}                      workflows:write   update
+DELETE  /workflows/{id}                      workflows:delete  delete_one
+GET     /workflows/{id}/versions             workflows:read    list_versions
+GET     /workflows/{id}/versions/{n}         workflows:read    get_version
 
 Handlers stay thin:
 1. FastAPI parses + validates input (via the body / query schema).
@@ -29,16 +31,18 @@ from flowforge.schemas.workflow import (
     WorkflowPage,
     WorkflowRead,
     WorkflowUpdate,
+    WorkflowVersionRead,
 )
 from flowforge.services import workflow_service
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
+
 def _dag_error_to_http(exc: DagValidationError) -> HTTPException:
     """Translate a domain validation error into a structured 422 response.
-    
+
     We use 422 (Unprocessable Entity) - same family as Pydantic validation
-    erroes. The body carried enough details for the client UI to highlight
+    errors. The body carries enough details for the client UI to highlight
     the broken steps.
     """
     return HTTPException(
@@ -46,8 +50,8 @@ def _dag_error_to_http(exc: DagValidationError) -> HTTPException:
         detail={
             "message": exc.message,
             "cycle_nodes": exc.cycle_nodes,
-            "bad_step":exc.bad_step
-        }
+            "bad_step": exc.bad_step,
+        },
     )
 
 
@@ -63,11 +67,7 @@ async def create_workflow(
     ),
     session: AsyncSession = Depends(get_session),
 ) -> WorkflowRead:
-    """Create a new workflow owned by the current user.
-
-    201 Created + the new resource is the REST convention for
-    POST-to-collection.
-    """
+    """Create a new workflow owned by the current user (version 1 snapshot)."""
     try:
         wf = await workflow_service.create(
             session,
@@ -80,6 +80,7 @@ async def create_workflow(
         raise _dag_error_to_http(exc)
 
     return wf  # type: ignore[return-value]
+
 
 @router.get("", response_model=WorkflowPage)
 async def list_workflows(
@@ -135,27 +136,21 @@ async def get_workflow(
 async def update_workflow(
     workflow_id: uuid.UUID,
     body: WorkflowUpdate,
-    _w: User = Depends(
+    current_user: User = Depends(
         require_permission(Permission.WORKFLOWS_WRITE)
     ),
     session: AsyncSession = Depends(get_session),
 ) -> WorkflowRead:
-    """Partial update.
-
-    exclude_unset=True is the WHOLE reason PATCH semantics work —
-    it gives us only fields the client EXPLICITLY sent.
-    Omitted fields stay as-is in the DB.
-
-    Without it, every optional field would arrive as None and we'd
-    nuke values to NULL on every request.
-    """
+    """Partial update. Definition changes publish a new immutable version."""
 
     patch = body.model_dump(exclude_unset=True)
+
     try:
         wf = await workflow_service.update(
             session,
             workflow_id,
             patch,
+            updated_by_id=current_user.id,
         )
     except DagValidationError as exc:
         raise _dag_error_to_http(exc)
@@ -196,3 +191,56 @@ async def delete_workflow(
     return Response(
         status_code=status.HTTP_204_NO_CONTENT
     )
+
+
+@router.get(
+    "/{workflow_id}/versions",
+    response_model=list[WorkflowVersionRead],
+)
+async def list_workflow_versions(
+    workflow_id: uuid.UUID,
+    _r: User = Depends(
+        require_permission(Permission.WORKFLOWS_READ)
+    ),
+    session: AsyncSession = Depends(get_session),
+) -> list[WorkflowVersionRead]:
+    """List all immutable versions for a workflow, newest first."""
+
+    versions = await workflow_service.list_versions(session, workflow_id)
+
+    if versions is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Workflow not found",
+        )
+
+    return versions  # type: ignore[return-value]
+
+
+@router.get(
+    "/{workflow_id}/versions/{version_number}",
+    response_model=WorkflowVersionRead,
+)
+async def get_workflow_version(
+    workflow_id: uuid.UUID,
+    version_number: int,
+    _r: User = Depends(
+        require_permission(Permission.WORKFLOWS_READ)
+    ),
+    session: AsyncSession = Depends(get_session),
+) -> WorkflowVersionRead:
+    """Fetch one immutable version snapshot by version number."""
+
+    version = await workflow_service.get_version(
+        session,
+        workflow_id,
+        version_number,
+    )
+
+    if version is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Workflow version not found",
+        )
+
+    return version  # type: ignore[return-value]

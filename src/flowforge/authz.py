@@ -58,6 +58,21 @@ class Permission(str, Enum):
     WORKFLOWS_WRITE = "workflows:write"
     WORKFLOWS_DELETE = "workflows:delete"
 
+    EXECUTIONS_READ = "executions:read"
+    EXECUTIONS_WRITE = "executions:write"
+
+    SCHEDULES_READ = "schedules:read"
+    SCHEDULES_WRITE = "schedules:write"
+
+    WEBHOOKS_READ = "webhooks:read"
+    WEBHOOKS_WRITE = "webhooks:write"
+
+    ARTIFACTS_READ = "artifacts:read"
+    ARTIFACTS_WRITE = "artifacts:write"
+
+    DEAD_LETTER_READ = "dead_letter:read"
+    DEAD_LETTER_WRITE = "dead_letter:write"
+
 
 # THE WHOLE POLICY — single source of truth.
 # To change what a role can do, you change THIS dict (and only this dict).
@@ -69,16 +84,40 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.WORKFLOWS_READ,
         Permission.WORKFLOWS_WRITE,
         Permission.WORKFLOWS_DELETE,
+        Permission.EXECUTIONS_READ,
+        Permission.EXECUTIONS_WRITE,
+        Permission.SCHEDULES_READ,
+        Permission.SCHEDULES_WRITE,
+        Permission.WEBHOOKS_READ,
+        Permission.WEBHOOKS_WRITE,
+        Permission.ARTIFACTS_READ,
+        Permission.ARTIFACTS_WRITE,
+        Permission.DEAD_LETTER_READ,
+        Permission.DEAD_LETTER_WRITE,
     },
     Role.DEVELOPER: {
         Permission.USERS_READ,
         Permission.WORKFLOWS_READ,
         Permission.WORKFLOWS_WRITE,
         Permission.WORKFLOWS_DELETE,
+        Permission.EXECUTIONS_READ,
+        Permission.EXECUTIONS_WRITE,
+        Permission.SCHEDULES_READ,
+        Permission.SCHEDULES_WRITE,
+        Permission.WEBHOOKS_READ,
+        Permission.WEBHOOKS_WRITE,
+        Permission.ARTIFACTS_READ,
+        Permission.ARTIFACTS_WRITE,
+        Permission.DEAD_LETTER_READ,
+        Permission.DEAD_LETTER_WRITE,
     },
     Role.VIEWER: {
         Permission.USERS_READ,
         Permission.WORKFLOWS_READ,
+        Permission.EXECUTIONS_READ,
+        Permission.SCHEDULES_READ,
+        Permission.WEBHOOKS_READ,
+        Permission.ARTIFACTS_READ,
     },
 }
 
